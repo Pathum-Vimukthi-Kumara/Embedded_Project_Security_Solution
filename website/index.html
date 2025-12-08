@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32 Audio Stream</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .container {
+      background: white;
+      padding: 40px;
+      border-radius: 10px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+      text-align: center;
+      max-width: 500px;
+      width: 90%;
+    }
+    h1 {
+      margin: 0 0 20px 0;
+      color: #333;
+    }
+    
+    /* Login Section */
+    #loginSection {
+      display: block;
+    }
+    
+    #appSection {
+      display: none;
+    }
+    
+    .input-group {
+      margin-bottom: 20px;
+      text-align: left;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 8px;
+      color: #333;
+      font-weight: 600;
+    }
+    
+    input[type="password"] {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 5px;
+      font-size: 16px;
+      box-sizing: border-box;
+    }
+    
+    input[type="password"]:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    
+    button {
+      padding: 15px 30px;
+      font-size: 16px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: all 0.3s;
+      margin: 10px;
+      font-weight: 600;
+    }
+    #loginBtn {
+      background-color: #667eea;
+      color: white;
+      width: 100%;
+    }
+    #loginBtn:hover:not(:disabled) {
+      background-color: #5568d3;
+    }
+    #startBtn {
+      background-color: #4CAF50;
+      color: white;
+    }
+    #startBtn:hover:not(:disabled) {
+      background-color: #45a049;
+    }
+    #stopBtn {
+      background-color: #f44336;
+      color: white;
+      display: none;
+    }
+    #stopBtn:hover:not(:disabled) {
+      background-color: #da190b;
+    }
+    #logoutBtn {
+      background-color: #ff9800;
+      color: white;
+      padding: 10px 20px;
+      font-size: 14px;
+    }
+    #logoutBtn:hover:not(:disabled) {
+      background-color: #e68900;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #status {
+      margin-top: 20px;
+      padding: 10px;
+      border-radius: 5px;
+      font-weight: bold;
+    }
+    .status-connected {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .status-error {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    .status-info {
+      background-color: #d1ecf1;
+      color: #0c5460;
+    }
+    .status-warning {
+      background-color: #fff3cd;
+      color: #856404;
+    }
+    
+    .wifi-info {
+      background: #e3f2fd;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      border-left: 4px solid #2196F3;
+    }
+    
+    .wifi-info h3 {
+      margin: 0 0 10px 0;
+      color: #1976D2;
+      font-size: 16px;
+    }
+    
+    .wifi-info p {
+      margin: 5px 0;
+      color: #555;
+      font-size: 14px;
+    }
+    
+    .instructions {
+      background: #fff9e6;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      text-align: left;
+      border-left: 4px solid #ffc107;
+    }
+    
+    .instructions h3 {
+      margin: 0 0 10px 0;
+      color: #f57c00;
+      font-size: 16px;
+    }
+    
+    .instructions ol {
+      margin: 10px 0 0 20px;
+      padding: 0;
+      color: #666;
+    }
+    
+    .instructions li {
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Login Section -->
+    <div id="loginSection">
+      <h1>🎤 ESP32 Audio Streamer</h1>
+      
+      <div class="wifi-info">
+        <h3>✅ Connecting...</h3>
+        <p>Please wait while we authenticate your connection.</p>
+      </div>
+      
+      <button id="loginBtn" onclick="login()" style="display:none;">Connect</button>
+      <div id="status"></div>
+    </div>
+
+    <!-- App Section -->
+    <div id="appSection">
+      <h1>🎤 ESP32 Audio Streamer</h1>
+      
+      <div class="wifi-info">
+        <h3>✅ Connected to WiFi</h3>
+        <p id="connectedWifi"></p>
+      </div>
+      
+      <button id="startBtn">Start Streaming</button>
+      <button id="stopBtn">Stop Streaming</button>
+      <button id="logoutBtn" onclick="logout()">Logout</button>
+      <div id="status"></div>
+    </div>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin - WiFi QR Code</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+      padding: 20px;
+    }
+    
+    .container {
+      background: white;
+      padding: 40px;
+      border-radius: 15px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      text-align: center;
+      max-width: 500px;
+      width: 100%;
+    }
+    
+    h1 {
+      margin-bottom: 10px;
+      color: #333;
+      font-size: 28px;
+    }
+    
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+    
+    #loginSection {
+      display: block;
+    }
+    
+    #qrSection {
+      display: none;
+    }
+    
+    .input-group {
+      margin-bottom: 20px;
+      text-align: left;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 8px;
+      color: #333;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    
+    input[type="password"] {
+      width: 100%;
+      padding: 12px 15px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 16px;
+      transition: border-color 0.3s;
+    }
+    
+    input[type="password"]:focus {
+      outline: none;
+      border-color: #2a5298;
+    }
+    
+    button {
+      padding: 12px 30px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s;
+      font-weight: 600;
+      width: 100%;
+    }
+    
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+    }
+    
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    #qrCodeImage {
+      margin: 30px 0;
+      border: 3px solid #e0e0e0;
+      border-radius: 10px;
+      max-width: 100%;
+      height: auto;
+    }
+    
+    .info-box {
+      background: #f8f9fa;
+      padding: 20px;
+      border-radius: 10px;
+      margin-top: 20px;
+      text-align: left;
+    }
+    
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .info-row:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+    }
+    
+    .info-label {
+      font-weight: 600;
+      color: #555;
+    }
+    
+    .info-value {
+      color: #333;
+      font-family: 'Courier New', monospace;
+      word-break: break-all;
+    }
+    
+    .instructions {
+      background: #e3f2fd;
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 20px;
+      text-align: left;
+      border-left: 4px solid #2196F3;
+    }
+    
+    .instructions h3 {
+      color: #1976D2;
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+    
+    .instructions ol {
+      margin-left: 20px;
+      color: #555;
+    }
+    
+    .instructions li {
+      margin-bottom: 8px;
+      line-height: 1.6;
+    }
+    
+    #message {
+      margin-top: 15px;
+      padding: 12px;
+      border-radius: 8px;
+      font-weight: 500;
+      display: none;
+    }
+    
+    .message-error {
+      background-color: #ffebee;
+      color: #c62828;
+      border: 1px solid #ef9a9a;
+    }
+    
+    .message-success {
+      background-color: #e8f5e9;
+      color: #2e7d32;
+      border: 1px solid #a5d6a7;
+    }
+    
+    .icon {
+      font-size: 60px;
+      margin-bottom: 20px;
+    }
+    
+    @media print {
+      body {
+        background: white;
+      }
+      
+      .container {
+        box-shadow: none;
+      }
+      
+      button {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Login Section -->
+    <div id="loginSection">
+      <div class="icon">🔐</div>
+      <h1>Admin Access</h1>
+      <p class="subtitle">Enter admin password to view WiFi QR code</p>
+      
+      <div class="input-group">
+        <label for="adminPassword">Admin Password</label>
+        <input type="password" id="adminPassword" placeholder="Enter admin password" autocomplete="current-password">
+      </div>
+      
+      <button class="btn-primary" onclick="adminLogin()">Access QR Code</button>
+      <div id="message"></div>
+    </div>
+
+    <!-- QR Code Section -->
+    <div id="qrSection">
+      <div class="icon">📱</div>
+      <h1>QR Codes for WiFi Access</h1>
+      <p class="subtitle">Show these QR codes to users</p>
+      
+      <h2 style="color: #2196F3; font-size: 20px; margin: 30px 0 15px 0;">Step 1: Connect to WiFi</h2>
+      <p style="color: #666; font-size: 14px; margin-bottom: 15px;">Scan this QR code to connect to the WiFi network</p>
+      <img id="wifiQrCode" alt="WiFi QR Code" style="margin: 20px 0; border: 3px solid #e0e0e0; border-radius: 10px; max-width: 100%; height: auto;" />
+      
+      <h2 style="color: #4CAF50; font-size: 20px; margin: 30px 0 15px 0;">Step 2: Open Website</h2>
+      <p style="color: #666; font-size: 14px; margin-bottom: 15px;">After connecting to WiFi, scan this QR code to open the website</p>
+      <img id="urlQrCode" alt="Website URL QR Code" style="margin: 20px 0; border: 3px solid #e0e0e0; border-radius: 10px; max-width: 100%; height: auto;" />
+      
+      <div class="info-box">
+        <div class="info-row">
+          <span class="info-label">Network Name:</span>
+          <span class="info-value" id="ssidDisplay"></span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Password:</span>
+          <span class="info-value" id="passwordDisplay"></span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Website URL:</span>
+          <span class="info-value" id="urlDisplay"></span>
+        </div>
+      </div>
+      
+      <div class="instructions">
+        <h3>📋 Instructions for Users:</h3>
+        <ol>
+          <li><strong>STEP 1 - Connect WiFi:</strong> Scan the FIRST QR code (blue) with phone camera</li>
+          <li><strong>Tap "Join":</strong> When phone prompts, tap to connect to WiFi</li>
+          <li><strong>STEP 2 - Open Website:</strong> After WiFi connects, scan the SECOND QR code (green)</li>
+          <li><strong>Browser Opens:</strong> Phone will automatically open the website</li>
+          <li><strong>Start Streaming:</strong> No password needed - just start using the app!</li>
+        </ol>
+        <p style="color: #d32f2f; font-weight: 600; margin-top: 15px; background: #ffebee; padding: 10px; border-radius: 5px;">
+          ⚠️ Users MUST scan BOTH QR codes: First for WiFi, then for website!
+        </p>
+      </div>
+      
+      <button class="btn-primary" onclick="window.print()" style="margin-top: 20px;">
+        🖨️ Print QR Code
+      </button>
+    </div>
+  </div>
+
+  <script>
+    async function adminLogin() {
+      const password = document.getElementById('adminPassword').value;
+      const messageDiv = document.getElementById('message');
+      
+      if (!password) {
+        showMessage('Please enter admin password', 'error');
+        return;
+      }
+      
+      try {
+        const response = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          await loadQRCode();
+        } else {
+          showMessage(data.error || 'Invalid password', 'error');
+        }
+      } catch (error) {
+        showMessage('Connection error. Please try again.', 'error');
+      }
+    }
+    
+    async function loadQRCode() {
+      try {
+        const response = await fetch('/api/admin/qr-code');
+        const data = await response.json();
+        
+        if (data.wifiQrCode && data.urlQrCode) {
+          document.getElementById('wifiQrCode').src = data.wifiQrCode;
+          document.getElementById('urlQrCode').src = data.urlQrCode;
+          document.getElementById('ssidDisplay').textContent = data.ssid;
+          document.getElementById('passwordDisplay').textContent = data.password;
+          document.getElementById('urlDisplay').textContent = data.url || 'http://localhost:10000';
+          
+          // Switch views
+          document.getElementById('loginSection').style.display = 'none';
+          document.getElementById('qrSection').style.display = 'block';
+        } else {
+          showMessage('Failed to generate QR codes', 'error');
+        }
+      } catch (error) {
+        showMessage('Failed to load QR codes. Please try again.', 'error');
+      }
+    }
+    
+    function showMessage(text, type) {
+      const messageDiv = document.getElementById('message');
+      messageDiv.textContent = text;
+      messageDiv.className = type === 'error' ? 'message-error' : 'message-success';
+      messageDiv.style.display = 'block';
+      
+      setTimeout(() => {
+        messageDiv.style.display = 'none';
+      }, 5000);
+    }
+    
+    // Enter key support
+    document.getElementById('adminPassword').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        adminLogin();
+      }
+    });
+  </script>
+</body>
+</html>

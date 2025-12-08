@@ -1,0 +1,366 @@
+// ---------------------- MODULES ----------------------
+import express from "express";
+import WebSocket, { WebSocketServer } from "ws";
+import dgram from "dgram";
+import path from "path";
+import { fileURLToPath } from "url";
+import session from "express-session";
+import QRCode from "qrcode";
+import helmet from "helmet";
+import { config } from "./config.js";
+
+// ---------------------- PATH HELPERS ----------------------
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// ---------------------- EXPRESS WEBSITE HOST ----------------------
+const app = express();
+const PORT = config.server.port;
+
+// Security middleware
+app.use(helmet({
+    contentSecurityPolicy: false  // Allow inline scripts for simplicity
+}));
+
+// Parse JSON and URL-encoded bodies
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Session middleware
+const sessionMiddleware = session({
+    secret: config.session.secret,
+    name: config.session.name,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        secure: false,  // Set to true if using HTTPS
+        httpOnly: true,
+        maxAge: config.session.cookieMaxAge
+    }
+});
+
+app.use(sessionMiddleware);
+
+// ---------------------- NETWORK VALIDATION ----------------------
+// Check if client is on the correct WiFi network (LOCAL MODE ONLY)
+const isOnCorrectNetwork = (req) => {
+    // PUBLIC MODE: Allow all connections (for Railway/cloud deployment)
+    if (config.deployment.mode === 'public') {
+        return true;
+    }
+    
+    // LOCAL MODE: Validate WiFi network
+    const clientIP = req.ip || req.connection.remoteAddress;
+    
+    // Extract IP address (remove IPv6 prefix if present)
+    const ip = clientIP.replace('::ffff:', '');
+    
+    // If localhost, allow (for testing)
+    if (ip === '127.0.0.1' || ip === '::1' || ip === 'localhost') {
+        return true;
+    }
+    
+    // Check if IP is in the same subnet as server
+    // Expected format: 192.168.x.x (private network)
+    const ipParts = ip.split('.');
+    
+    if (ipParts.length === 4) {
+        // Check if it's a private network IP
+        const firstOctet = parseInt(ipParts[0]);
+        const secondOctet = parseInt(ipParts[1]);
+        
+        // Allow private network ranges:
+        // 192.168.x.x or 10.x.x.x or 172.16-31.x.x
+        if (firstOctet === 192 && secondOctet === 168) return true;
+        if (firstOctet === 10) return true;
+        if (firstOctet === 172 && secondOctet >= 16 && secondOctet <= 31) return true;
+    }
+    
+    return false;
+};
+
+// Middleware to validate network connection
+const requireNetworkAccess = (req, res, next) => {
+    if (isOnCorrectNetwork(req)) {
+        // Auto-authenticate if on correct network
+        if (!req.session.authenticated) {
+            req.session.authenticated = true;
+            req.session.connectedAt = new Date().toISOString();
+        }
+        next();
+    } else {
+        res.status(403).send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Access Denied</title>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        min-height: 100vh;
+                        margin: 0;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    }
+                    .container {
+                        background: white;
+                        padding: 40px;
+                        border-radius: 10px;
+                        box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+                        text-align: center;
+                        max-width: 500px;
+                    }
+                    h1 { color: #f44336; margin-bottom: 20px; }
+                    p { color: #666; line-height: 1.6; }
+                    .icon { font-size: 60px; margin-bottom: 20px; }
+                    .instructions {
+                        background: #fff3cd;
+                        padding: 15px;
+                        border-radius: 8px;
+                        margin-top: 20px;
+                        text-align: left;
+                        border-left: 4px solid #ffc107;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="icon">🚫</div>
+                    <h1>Access Denied</h1>
+                    <p>You must be connected to the <strong>${config.wifi.ssid}</strong> WiFi network to access this site.</p>
+                    <p style="color: #999; font-size: 12px; margin-top: 10px;">Deployment Mode: ${config.deployment.mode}</p>
+                    <div class="instructions">
+                        <h3>How to Connect:</h3>
+                        <ol>
+                            <li>Scan the QR code provided</li>
+                            <li>Connect to the WiFi network</li>
+                            <li>Return to this page</li>
+                        </ol>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `);
+    }
+};
+
+// ---------------------- AUTHENTICATION MIDDLEWARE ----------------------
+const requireAuth = (req, res, next) => {
+    if (req.session && req.session.authenticated) {
+        next();
+    } else {
+        res.status(401).json({ error: 'Unauthorized. Please connect to WiFi.' });
+    }
+};
+
+// ---------------------- ROUTES ----------------------
+
+// Auto-login endpoint - authenticates based on network connection
+app.post('/api/login', (req, res) => {
+    // Auto-authenticate if accessing from network
+    // No password required - just being on the WiFi network is enough
+    req.session.authenticated = true;
+    req.session.connectedAt = new Date().toISOString();
+    res.json({ 
+        success: true, 
+        message: 'Successfully authenticated!',
+        ssid: config.wifi.ssid
+    });
+});
+
+// Logout endpoint
+app.post('/api/logout', (req, res) => {
+    req.session.destroy((err) => {
+        if (err) {
+            res.status(500).json({ error: 'Logout failed' });
+        } else {
+            res.json({ success: true });
+        }
+    });
+});
+
+// Check authentication status
+app.get('/api/auth-status', (req, res) => {
+    res.json({ 
+        authenticated: req.session && req.session.authenticated === true 
+    });
+});
+
+// Admin login for QR code access
+app.post('/api/admin/login', (req, res) => {
+    const { password } = req.body;
+    
+    if (password === config.admin.password) {
+        req.session.adminAuthenticated = true;
+        res.json({ success: true });
+    } else {
+        res.status(401).json({ 
+            success: false, 
+            error: 'Invalid admin password' 
+        });
+    }
+});
+
+// Generate WiFi QR Code and Website URL QR Code (admin only)
+app.get('/api/admin/qr-code', async (req, res) => {
+    if (!req.session || !req.session.adminAuthenticated) {
+        return res.status(401).json({ error: 'Admin authentication required' });
+    }
+    
+    try {
+        // Auto-detect server URL from request
+        const protocol = req.protocol || 'http';
+        const host = req.get('host'); // Includes port if non-standard
+        
+        // For cloud deployment (Railway, Render, etc.): Use request host
+        // For local development: Use configured IP or request host
+        let serverUrl;
+        if (config.server.serverIp) {
+            // Local development with configured IP
+            serverUrl = `http://${config.server.serverIp}:${config.server.port}`;
+        } else {
+            // Cloud deployment - use request host (includes Railway domain)
+            serverUrl = `${protocol}://${host}`;
+        }
+        
+        // WiFi QR code format (for connecting to WiFi)
+        const wifiString = `WIFI:T:WPA;S:${config.wifi.ssid};P:${config.wifi.password};H:${config.wifi.hidden ? 'true' : 'false'};;`;
+        
+        // Generate WiFi QR Code
+        const wifiQrCode = await QRCode.toDataURL(wifiString, {
+            errorCorrectionLevel: 'H',
+            type: 'image/png',
+            width: 400,
+            margin: 2
+        });
+        
+        // Generate Website URL QR Code (to open the site directly)
+        const urlQrCode = await QRCode.toDataURL(serverUrl, {
+            errorCorrectionLevel: 'H',
+            type: 'image/png',
+            width: 400,
+            margin: 2
+        });
+        
+        res.json({ 
+            wifiQrCode: wifiQrCode,
+            urlQrCode: urlQrCode,
+            ssid: config.wifi.ssid,
+            password: config.wifi.password,
+            url: serverUrl
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to generate QR code' });
+    }
+});
+
+// Health check for hosting providers (no auth needed)
+app.get('/health', (req, res) => res.send('ok'));
+
+// ---------------------- CAPTIVE PORTAL DETECTION ----------------------
+// These endpoints are checked by phones when connecting to WiFi
+// Redirecting them will auto-open the browser to our site
+
+const getServerUrl = (req) => {
+    if (config.server.serverIp) {
+        return `http://${config.server.serverIp}:${config.server.port}`;
+    }
+    const protocol = req.protocol || 'http';
+    return `${protocol}://${req.get('host')}`;
+};
+
+// iOS Captive Portal Detection
+app.get('/hotspot-detect.html', (req, res) => {
+    res.redirect(302, getServerUrl(req));
+});
+
+// Android Captive Portal Detection (multiple endpoints)
+app.get('/generate_204', (req, res) => {
+    res.redirect(302, getServerUrl(req));
+});
+
+app.get('/gen_204', (req, res) => {
+    res.redirect(302, getServerUrl(req));
+});
+
+// Windows Captive Portal Detection
+app.get('/ncsi.txt', (req, res) => {
+    res.redirect(302, getServerUrl(req));
+});
+
+app.get('/connecttest.txt', (req, res) => {
+    res.redirect(302, getServerUrl(req));
+});
+
+// Generic redirect for root when no session
+app.get('/redirect', (req, res) => {
+    res.redirect(302, getServerUrl(req));
+});
+
+// Apply network validation to all routes except admin and health
+app.use((req, res, next) => {
+    // Skip network check for admin routes
+    if (req.path.startsWith('/api/admin') || req.path === '/admin.html') {
+        next();
+    } else {
+        requireNetworkAccess(req, res, next);
+    }
+});
+
+// Serve your website folder statically (protected by network validation)
+app.use(express.static(path.join(__dirname, "../website"))); 
+
+// Fallback to index.html for single-page app routes
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../website/index.html'));
+});
+
+const server = app.listen(PORT, () => {
+    console.log(`HTTP + WebSocket running on port ${PORT}`);
+    console.log('PORT env:', process.env.PORT);
+});
+
+// ---------------------- WEBSOCKET SERVER ----------------------
+const wss = new WebSocketServer({ noServer: true });
+
+// Upgrade HTTP connection to WebSocket with session
+server.on('upgrade', (request, socket, head) => {
+    sessionMiddleware(request, {}, () => {
+        // Check if authenticated
+        if (!request.session || !request.session.authenticated) {
+            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+            socket.destroy();
+            return;
+        }
+        
+        wss.handleUpgrade(request, socket, head, (ws) => {
+            wss.emit('connection', ws, request);
+        });
+    });
+});
+
+// ---------------------- UDP SETUP ----------------------
+const udp = dgram.createSocket("udp4");
+const ESP32_IP = config.server.esp32Ip;
+const UDP_PORT = config.server.udpPort;
+
+// ---------------------- WS HANDLERS ----------------------
+wss.on("connection", (ws, request) => {
+    const clientIP = request.socket.remoteAddress;
+    console.log(`✅ WebSocket connected from ${clientIP}`);
+
+    ws.on("message", (data) => {
+        // Forward audio data to ESP32
+        udp.send(data, UDP_PORT, ESP32_IP);
+    });
+    
+    ws.on("close", () => {
+        console.log(`❌ WebSocket disconnected from ${clientIP}`);
+    });
+    
+    ws.on("error", (error) => {
+        console.error(`⚠️ WebSocket error from ${clientIP}:`, error.message);
+    });
+});
