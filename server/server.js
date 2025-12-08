@@ -7,11 +7,41 @@ import { fileURLToPath } from "url";
 import session from "express-session";
 import QRCode from "qrcode";
 import helmet from "helmet";
+import os from "os";
 import { config } from "./config.js";
 
 // ---------------------- PATH HELPERS ----------------------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// ---------------------- NETWORK DETECTION ----------------------
+// Auto-detect server's WiFi IP address
+const getServerIP = () => {
+    const interfaces = os.networkInterfaces();
+    
+    // Look for WiFi/Ethernet interface with private IP
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            // Skip internal (loopback) and non-IPv4 addresses
+            if (iface.family === 'IPv4' && !iface.internal) {
+                const ip = iface.address;
+                const parts = ip.split('.');
+                const firstOctet = parseInt(parts[0]);
+                const secondOctet = parseInt(parts[1]);
+                
+                // Return first private IP found (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+                if (firstOctet === 192 && secondOctet === 168) return ip;
+                if (firstOctet === 10) return ip;
+                if (firstOctet === 172 && secondOctet >= 16 && secondOctet <= 31) return ip;
+            }
+        }
+    }
+    
+    return '0.0.0.0';  // Listen on all interfaces if not found
+};
+
+const SERVER_IP = getServerIP();
+console.log(`🌐 Server WiFi IP detected: ${SERVER_IP}`);
 
 // ---------------------- EXPRESS WEBSITE HOST ----------------------
 const app = express();
@@ -49,7 +79,7 @@ const isOnCorrectNetwork = (req) => {
         return true;
     }
     
-    // LOCAL MODE: Validate WiFi network
+    // LOCAL MODE: Validate WiFi network - must be same subnet as server
     const clientIP = req.ip || req.connection.remoteAddress;
     
     // Extract IP address (remove IPv6 prefix if present)
@@ -60,22 +90,27 @@ const isOnCorrectNetwork = (req) => {
         return true;
     }
     
-    // Check if IP is in the same subnet as server
-    // Expected format: 192.168.x.x (private network)
-    const ipParts = ip.split('.');
+    // Check if client is on same subnet as server
+    const clientParts = ip.split('.');
+    const serverParts = SERVER_IP.split('.');
     
-    if (ipParts.length === 4) {
-        // Check if it's a private network IP
-        const firstOctet = parseInt(ipParts[0]);
-        const secondOctet = parseInt(ipParts[1]);
+    if (clientParts.length === 4 && serverParts.length === 4) {
+        // Check if first 3 octets match (same /24 subnet)
+        // Example: Server 192.168.1.100, Client 192.168.1.50 → MATCH
+        //          Server 192.168.1.100, Client 192.168.2.50 → NO MATCH
+        const sameSubnet = (
+            clientParts[0] === serverParts[0] &&
+            clientParts[1] === serverParts[1] &&
+            clientParts[2] === serverParts[2]
+        );
         
-        // Allow private network ranges:
-        // 192.168.x.x or 10.x.x.x or 172.16-31.x.x
-        if (firstOctet === 192 && secondOctet === 168) return true;
-        if (firstOctet === 10) return true;
-        if (firstOctet === 172 && secondOctet >= 16 && secondOctet <= 31) return true;
+        if (sameSubnet) {
+            console.log(`✅ Client ${ip} on same subnet as server ${SERVER_IP}`);
+            return true;
+        }
     }
     
+    console.log(`❌ Client ${ip} NOT on same subnet as server ${SERVER_IP}`);
     return false;
 };
 
@@ -210,18 +245,17 @@ app.get('/api/admin/qr-code', async (req, res) => {
     }
     
     try {
-        // Auto-detect server URL from request
-        const protocol = req.protocol || 'http';
-        const host = req.get('host'); // Includes port if non-standard
-        
-        // For cloud deployment (Railway, Render, etc.): Use request host
-        // For local development: Use configured IP or request host
+        // Auto-detect server URL
+        // For VM deployment: Use detected WiFi IP
+        // For cloud deployment: Use request host
         let serverUrl;
-        if (config.server.serverIp) {
-            // Local development with configured IP
-            serverUrl = `http://${config.server.serverIp}:${config.server.port}`;
+        if (SERVER_IP !== '0.0.0.0') {
+            // Use auto-detected WiFi IP (VM or local network)
+            serverUrl = `http://${SERVER_IP}:${PORT}`;
         } else {
-            // Cloud deployment - use request host (includes Railway domain)
+            // Fallback to request host (cloud deployment)
+            const protocol = req.protocol || 'http';
+            const host = req.get('host');
             serverUrl = `${protocol}://${host}`;
         }
         
@@ -264,8 +298,8 @@ app.get('/health', (req, res) => res.send('ok'));
 // Redirecting them will auto-open the browser to our site
 
 const getServerUrl = (req) => {
-    if (config.server.serverIp) {
-        return `http://${config.server.serverIp}:${config.server.port}`;
+    if (SERVER_IP !== '0.0.0.0') {
+        return `http://${SERVER_IP}:${PORT}`;
     }
     const protocol = req.protocol || 'http';
     return `${protocol}://${req.get('host')}`;
@@ -317,9 +351,15 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '../website/index.html'));
 });
 
-const server = app.listen(PORT, () => {
-    console.log(`HTTP + WebSocket running on port ${PORT}`);
-    console.log('PORT env:', process.env.PORT);
+const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n🚀 Server running on:`);
+    console.log(`   Local:   http://localhost:${PORT}`);
+    console.log(`   Network: http://${SERVER_IP}:${PORT}`);
+    console.log(`🔐 Admin Panel: http://${SERVER_IP}:${PORT}/admin.html`);
+    console.log(`📡 WebSocket ready for audio streaming`);
+    console.log(`🎯 ESP32 UDP forwarding to: ${config.server.esp32Ip}:${config.server.udpPort}`);
+    console.log(`🌐 Deployment Mode: ${config.deployment.mode}`);
+    console.log(`📶 WiFi Network: ${config.wifi.ssid}\n`);
 });
 
 // ---------------------- WEBSOCKET SERVER ----------------------
