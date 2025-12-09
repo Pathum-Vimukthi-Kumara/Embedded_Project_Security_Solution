@@ -35,6 +35,11 @@ export const config = {
         // For local: Use your WiFi IP (e.g., "192.168.234.231")
         serverIp: process.env.SERVER_URL || null,  // Auto-detect if null
         esp32Ip: "192.168.1.25",  // Your ESP32 IP
-        udpPort: 5005
+        udpPort: 5005,
+        // HTTPS Configuration (required for mobile microphone access)
+        https: {
+            enabled: process.env.HTTPS_ENABLED === 'true' || true,  // Enable HTTPS by default
+            port: process.env.HTTPS_PORT || 8443  // HTTPS port (use 8443 to avoid admin requirement)
+        }
     }
 };

@@ -8,6 +8,8 @@ import session from "express-session";
 import QRCode from "qrcode";
 import helmet from "helmet";
 import os from "os";
+import https from "https";
+import fs from "fs";
 import { config } from "./config.js";
 
 // ---------------------- PATH HELPERS ----------------------
@@ -246,12 +248,16 @@ app.get('/api/admin/qr-code', async (req, res) => {
     
     try {
         // Auto-detect server URL
-        // For VM deployment: Use detected WiFi IP
+        // For VM deployment: Use detected WiFi IP with HTTPS
         // For cloud deployment: Use request host
         let serverUrl;
         if (SERVER_IP !== '0.0.0.0') {
             // Use auto-detected WiFi IP (VM or local network)
-            serverUrl = `http://${SERVER_IP}:${PORT}`;
+            if (config.server.https.enabled) {
+                serverUrl = `https://${SERVER_IP}:${config.server.https.port}`;
+            } else {
+                serverUrl = `http://${SERVER_IP}:${PORT}`;
+            }
         } else {
             // Fallback to request host (cloud deployment)
             const protocol = req.protocol || 'http';
@@ -299,6 +305,9 @@ app.get('/health', (req, res) => res.send('ok'));
 
 const getServerUrl = (req) => {
     if (SERVER_IP !== '0.0.0.0') {
+        if (config.server.https.enabled) {
+            return `https://${SERVER_IP}:${config.server.https.port}`;
+        }
         return `http://${SERVER_IP}:${PORT}`;
     }
     const protocol = req.protocol || 'http';
@@ -351,16 +360,56 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '../website/index.html'));
 });
 
-const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n🚀 Server running on:`);
-    console.log(`   Local:   http://localhost:${PORT}`);
-    console.log(`   Network: http://${SERVER_IP}:${PORT}`);
-    console.log(`🔐 Admin Panel: http://${SERVER_IP}:${PORT}/admin.html`);
-    console.log(`📡 WebSocket ready for audio streaming`);
-    console.log(`🎯 ESP32 UDP forwarding to: ${config.server.esp32Ip}:${config.server.udpPort}`);
-    console.log(`🌐 Deployment Mode: ${config.deployment.mode}`);
-    console.log(`📶 WiFi Network: ${config.wifi.ssid}\n`);
-});
+// ---------------------- START SERVER ----------------------
+// Create HTTPS server if enabled (required for mobile microphone access)
+let server;
+let httpsServer;
+
+if (config.server.https.enabled) {
+    // Try to load SSL certificates
+    const certPath = path.join(__dirname, 'certs', 'cert.pem');
+    const keyPath = path.join(__dirname, 'certs', 'key.pem');
+    
+    if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+        const httpsOptions = {
+            key: fs.readFileSync(keyPath),
+            cert: fs.readFileSync(certPath)
+        };
+        
+        // Create HTTPS server
+        httpsServer = https.createServer(httpsOptions, app);
+        httpsServer.listen(config.server.https.port, '0.0.0.0', () => {
+            console.log(`\n🚀 HTTPS Server running on:`);
+            console.log(`   Local:   https://localhost:${config.server.https.port}`);
+            console.log(`   Network: https://${SERVER_IP}:${config.server.https.port}`);
+            console.log(`🔐 Admin Panel: https://${SERVER_IP}:${config.server.https.port}/admin.html`);
+            console.log(`📡 WebSocket ready for audio streaming (WSS)`);
+            console.log(`🎯 ESP32 UDP forwarding to: ${config.server.esp32Ip}:${config.server.udpPort}`);
+            console.log(`🌐 Deployment Mode: ${config.deployment.mode}`);
+            console.log(`📶 WiFi Network: ${config.wifi.ssid}`);
+            console.log(`\n⚠️  Browser will show security warning (self-signed certificate)`);
+            console.log(`   Click "Advanced" → "Proceed" to continue\n`);
+        });
+        
+        server = httpsServer;
+    } else {
+        console.error('❌ SSL certificates not found!');
+        console.error(`   Expected: ${certPath} and ${keyPath}`);
+        console.error(`\n📥 Run: node server/generate-cert.js`);
+        console.error(`   Or set HTTPS_ENABLED=false in config\n`);
+        process.exit(1);
+    }
+} else {
+    // HTTP only (won't work for mobile microphone)
+    server = app.listen(PORT, '0.0.0.0', () => {
+        console.log(`\n🚀 HTTP Server running on:`);
+        console.log(`   Local:   http://localhost:${PORT}`);
+        console.log(`   Network: http://${SERVER_IP}:${PORT}`);
+        console.log(`🔐 Admin Panel: http://${SERVER_IP}:${PORT}/admin.html`);
+        console.log(`⚠️  Warning: Mobile browsers require HTTPS for microphone access`);
+        console.log(`   Enable HTTPS in config.js for mobile support\n`);
+    });
+}
 
 // ---------------------- WEBSOCKET SERVER ----------------------
 const wss = new WebSocketServer({ noServer: true });
