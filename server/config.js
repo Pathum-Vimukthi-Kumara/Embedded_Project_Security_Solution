@@ -9,8 +9,8 @@ export const config = {
     
     // WiFi Network Configuration
     wifi: {
-        ssid: "Redmi Note 11",     // ← Change to your WiFi network name
-        password: "911redmi11",     // ← Change to your WiFi password
+        ssid: "Pathum",     // ← Change to your WiFi network name
+        password: "PATHUM@@123",     // ← Change to your WiFi password
         // For hidden networks
         hidden: false               // ← Set to true if WiFi is hidden
     },
