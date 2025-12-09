@@ -222,25 +222,6 @@ voice_05_12/
 └── HTTPS_SETUP.md        # Detailed HTTPS guide
 ```
 
-## 🌐 Deployment Options
-
-### Local Deployment (VM/Raspberry Pi)
-```bash
-# Run on your VM or embedded device
-npm start
-
-# Access from same WiFi:
-https://192.168.x.x:8443
-```
-
-### Cloud Deployment (Railway/Render)
-```bash
-# Set environment variable
-DEPLOYMENT_MODE=public
-
-# Deploy to Railway
-# Note: Network validation won't work (cloud can't detect local WiFi)
-```
 
 ## 🔐 Best Practices
 
